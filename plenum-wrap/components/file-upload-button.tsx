@@ -27,7 +27,7 @@ export function FileUploadButton({
   const handleFiles = (files: FileList | null) => {
     if (!files) return
 
-    const fileArray = Array.from(files).slice(0, 3)
+    const fileArray = Array.from(files).slice(0, 3) // Limit to 3 files as per your component logic
 
     const validFiles = fileArray.filter(isAllowedFileType)
     const rejected = fileArray.filter(f => !isAllowedFileType(f))
@@ -67,18 +67,18 @@ export function FileUploadButton({
       <input
         ref={inputRef}
         type="file"
-        accept="image/*,.pdf,.doc,.docx"
+        accept="image/*,.pdf,.doc,.docx" // Match this with your allowed types
         hidden
         multiple
         onChange={e => {
           handleFiles(e.target.files)
-          e.target.value = ''
+          e.target.value = '' // Clear input value for subsequent selections of the same file
         }}
       />
       <Button
-        variant="outline"
+        variant="outline" // Use outline variant for consistency with other buttons
         size="icon"
-        className="rounded-full"
+        className="rounded-full p-2 hover:bg-orange-500 hover:text-white transition-colors duration-200" // Added styling
         onClick={() => inputRef.current?.click()}
       >
         <Paperclip size={18} />

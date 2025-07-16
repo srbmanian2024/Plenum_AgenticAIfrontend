@@ -5,108 +5,60 @@ import {
   SidebarGroupLabel,
   SidebarMenu
 } from '@/components/ui/sidebar'
-import { Chat as DBChat } from '@/lib/db/schema'
-import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { ChatHistorySkeleton } from './chat-history-skeleton'
 import { ChatMenuItem } from './chat-menu-item'
 import { ClearHistoryAction } from './clear-history-action'
 
-interface ChatPageResponse {
-  chats: DBChat[]
-  nextOffset: number | null
+interface ChatHistoryItem {
+  id: string
+  session_id: string
+  agent_id: string
+  sender: 'user' | 'assistant'
+  message: string
+  timestamp: string
 }
 
 export function ChatHistoryClient() {
-  const [chats, setChats] = useState<DBChat[]>([])
-  const [nextOffset, setNextOffset] = useState<number | null>(null)
+  const [chats, setChats] = useState<ChatHistoryItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const loadMoreRef = useRef<HTMLDivElement>(null)
-  const [isPending, startTransition] = useTransition()
+  const [hasError, setHasError] = useState(false)
 
-  const fetchInitialChats = useCallback(async () => {
-    setIsLoading(true)
+  const fetchChatHistory = useCallback(async () => {
+    const sessionId = localStorage.getItem('session_id')
+
+    if (!sessionId) {
+      toast.error('No session ID found in localStorage.')
+      setIsLoading(false)
+      return
+    }
+
     try {
-      const response = await fetch(`/api/chats?offset=0&limit=20`)
-      if (!response.ok) {
-        throw new Error('Failed to fetch initial chat history')
-      }
-      const { chats: dbChats, nextOffset: newNextOffset } =
-        (await response.json()) as ChatPageResponse
+      const response = await fetch(
+        `https://agent-api.gentlesmoke-fd81e91e.uaenorth.azurecontainerapps.io/v1/chat/history/${sessionId}`
+      )
 
-      setChats(dbChats)
-      setNextOffset(newNextOffset)
-    } catch (error) {
-      console.error('Failed to load initial chats:', error)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch chat history: ${response.status}`)
+      }
+
+      const history: ChatHistoryItem[] = await response.json()
+      setChats(history.reverse()) // Show latest first (optional)
+    } catch (err) {
+      console.error('Failed to fetch chat history:', err)
       toast.error('Failed to load chat history.')
-      setNextOffset(null)
+      setHasError(true)
     } finally {
       setIsLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    fetchInitialChats()
-  }, [fetchInitialChats])
+    fetchChatHistory()
+  }, [fetchChatHistory])
 
-  useEffect(() => {
-    const handleHistoryUpdate = () => {
-      startTransition(() => {
-        fetchInitialChats()
-      })
-    }
-    window.addEventListener('chat-history-updated', handleHistoryUpdate)
-    return () => {
-      window.removeEventListener('chat-history-updated', handleHistoryUpdate)
-    }
-  }, [fetchInitialChats])
-
-  const fetchMoreChats = useCallback(async () => {
-    if (isLoading || nextOffset === null) return
-
-    setIsLoading(true)
-    try {
-      const response = await fetch(`/api/chats?offset=${nextOffset}&limit=20`)
-      if (!response.ok) {
-        throw new Error('Failed to fetch more chat history')
-      }
-      const { chats: dbChats, nextOffset: newNextOffset } =
-        (await response.json()) as ChatPageResponse
-
-      setChats(prevChats => [...prevChats, ...dbChats])
-      setNextOffset(newNextOffset)
-    } catch (error) {
-      console.error('Failed to load more chats:', error)
-      toast.error('Failed to load more chat history.')
-      setNextOffset(null)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [nextOffset, isLoading])
-
-  useEffect(() => {
-    const observerRefValue = loadMoreRef.current
-    if (!observerRefValue || nextOffset === null || isPending) return
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && !isLoading && !isPending) {
-          fetchMoreChats()
-        }
-      },
-      { threshold: 0.1 }
-    )
-
-    observer.observe(observerRefValue)
-
-    return () => {
-      if (observerRefValue) {
-        observer.unobserve(observerRefValue)
-      }
-    }
-  }, [fetchMoreChats, nextOffset, isLoading, isPending])
-
-  const isHistoryEmpty = !isLoading && !chats.length && nextOffset === null
+  const isHistoryEmpty = !isLoading && !chats.length && !hasError
 
   return (
     <div className="flex flex-col flex-1 h-full">
@@ -116,21 +68,31 @@ export function ChatHistoryClient() {
           <ClearHistoryAction empty={isHistoryEmpty} />
         </div>
       </SidebarGroup>
+
       <div className="flex-1 overflow-y-auto mb-2 relative">
-        {isHistoryEmpty && !isPending ? (
+        {isHistoryEmpty ? (
           <div className="px-2 text-foreground/30 text-sm text-center py-4">
-            No search history
+            No chat history
           </div>
         ) : (
           <SidebarMenu>
-            {chats.map(
-              (chat: DBChat) =>
-                chat && <ChatMenuItem key={chat.id} chat={chat} />
-            )}
+            {chats.map(chat => (
+              <ChatMenuItem
+                key={chat.id}
+                chat={{
+                  title: chat.message.slice(0, 30) || 'No Title',
+                  id: chat.id,
+                  input: chat.sender === 'user' ? chat.message : '',
+                  createdAt: new Date(chat.timestamp),
+                  sender: chat.sender,
+                  sessionId: chat.session_id
+                }}
+              />
+            ))}
           </SidebarMenu>
         )}
-        <div ref={loadMoreRef} style={{ height: '1px' }} />
-        {(isLoading || isPending) && (
+
+        {isLoading && (
           <div className="py-2">
             <ChatHistorySkeleton />
           </div>

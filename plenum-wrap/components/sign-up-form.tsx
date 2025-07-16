@@ -38,7 +38,7 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
 
     try {
       const res = await fetch(
-        'https://agent-api.livelywave-29b8c618.uaenorth.azurecontainerapps.io/v1/auth/register',
+        'https://doc-screener-rag.gentlesmoke-fd81e91e.uaenorth.azurecontainerapps.io/v1/auth/register',
         {
           method: 'POST',
           headers: {
@@ -73,7 +73,7 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl flex flex-col items-center justify-center gap-4">
-            <IconLogo className="size-12" />
+            <IconLogo className="h-40 w-40" />
             Create an account
           </CardTitle>
           <CardDescription>Enter your details below to get started</CardDescription>

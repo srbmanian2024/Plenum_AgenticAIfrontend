@@ -1,100 +1,81 @@
 'use client'
 
 import { useEffect, useRef, useState, useMemo } from 'react'
-import { Button } from '@/components/ui/button' // Assuming Shadcn UI Button
-import { Input } from '@/components/ui/input'   // Assuming Shadcn UI Input
-import { Skeleton } from '@/components/ui/skeleton' // Import Skeleton
-import AnimatedMessage from './animated-message'; // Import the AnimatedMessage component
-import { formatChatMessageContent } from '@/lib/utils/message-formatter'; // Import the new formatter
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import AnimatedMessage from './animated-message';
+import { formatChatMessageContent } from '@/lib/utils/message-formatter'; // Import the formatter
 
-// --- MOCK INTERFACES AND COMPONENTS (TO SIMULATE @ai-sdk/react DEPENDENCIES) ---
-interface UIMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'tool' | 'system';
-  content: Array<{ type: 'text'; text: string; }>;
-  createdAt?: Date;
-}
+// Import shared types
+import { UIMessage, ChatSection } from '../types/chat'; // Assuming these are now in types/chat.ts
 
-interface ChatSection {
-  id: string;
-  userMessage: UIMessage;
-  assistantMessages: UIMessage[];
-}
-
-interface MockUseChatHelpers {
-  status: 'initial' | 'submitted' | 'streaming' | 'done' | 'error';
-}
+// Skeleton for dynamically showing placeholder messages
+const AutoScalingChatSkeleton = () => (
+  <div className="flex flex-col space-y-4 p-4 w-full max-w-2xl mx-auto">
+    <div className="flex justify-end">
+      <Skeleton className="h-8 w-2/3 rounded-xl bg-gray-200" />
+    </div>
+    <div className="flex justify-start">
+      <Skeleton className="h-12 w-3/4 rounded-xl bg-gray-100 border border-gray-200" />
+    </div>
+    <div className="flex justify-end">
+      <Skeleton className="h-10 w-1/2 rounded-xl bg-gray-200" />
+    </div>
+    <div className="flex justify-start">
+      <Skeleton className="h-16 w-full rounded-xl bg-gray-100 border border-gray-200" />
+    </div>
+    <div className="flex justify-end">
+      <Skeleton className="h-6 w-1/3 rounded-xl bg-gray-200" />
+    </div>
+  </div>
+);
 
 // Simplified RenderMessage component - Enhanced Styling
-// This component now only handles the styling of the message bubble.
-// The animation logic is moved to ChatMessages.
 const RenderMessage = ({ message, children }: { message: UIMessage; children: React.ReactNode }) => {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
 
   let messageClass = '';
-  let contentClass = 'rounded-xl p-3 shadow-sm max-w-[80%]'; // Base styling for content bubble
+  let contentClass = 'rounded-xl p-3 shadow-sm max-w-[80%]';
 
   if (isUser) {
     messageClass = 'justify-end';
-    contentClass += ' bg-blue-500 text-white'; // User message color
+    contentClass += ' bg-amber-500 text-white';
   } else if (isSystem) {
-    messageClass = 'justify-center'; // Center system messages
-    contentClass = 'text-gray-500 text-sm italic bg-transparent shadow-none p-1 max-w-full'; // System message styling
+    messageClass = 'justify-center';
+    contentClass = 'text-gray-500 text-sm italic bg-transparent shadow-none p-1 max-w-full';
   } else { // Assistant message
     messageClass = 'justify-start';
-    contentClass += ' bg-white text-gray-800 border border-gray-200'; // Assistant message color
+    contentClass += ' bg-white text-gray-800 border border-gray-200';
   }
 
   return (
     <div className={`flex ${messageClass} mb-3`}>
       <div className={contentClass}>
-        {children} {/* Render children (either plain text or AnimatedMessage) */}
-        {message.createdAt && !isSystem && ( // Don't show timestamp for system messages
-          <p className="text-xs text-gray-300 mt-1 opacity-80">{message.createdAt.toLocaleTimeString()}</p>
+        {children}
+        {message.createdAt && !isSystem && (
+          <p className="text-xs text-gray-300 mt-1 opacity-80">
+            {message.createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </p>
         )}
       </div>
     </div>
   );
 };
 
-// Mock DefaultSkeleton component for streaming assistant messages
-const DefaultSkeleton = () => (
-  <div className="flex justify-start mb-4">
-    <div className="bg-gray-100 text-gray-800 self-start rounded-xl p-3 max-w-[80%] animate-pulse border border-gray-200 shadow-sm">
-      <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-      <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-    </div>
-  </div>
-);
-
-// Skeleton for the initial 3-second buffer
-const InitialLoadingSkeleton = () => (
-  <div className="flex flex-col space-y-4 p-4 w-full max-w-2xl mx-auto">
-    <Skeleton className="h-8 w-1/2 rounded-md bg-gray-200" />
-    <Skeleton className="h-4 w-3/4 rounded-md bg-gray-200" />
-    <Skeleton className="h-4 w-2/3 rounded-md bg-gray-200" />
-    <Skeleton className="h-4 w-1/2 rounded-md bg-gray-200" />
-    <Skeleton className="h-8 w-full rounded-md bg-gray-200" />
-    <Skeleton className="h-4 w-2/3 rounded-md bg-gray-200" />
-    <Skeleton className="h-4 w-1/4 rounded-md bg-gray-200" />
-  </div>
-);
-
-
-// --- END MOCK INTERFACES AND COMPONENTS ---
-
 
 // Main ChatMessages component
 interface ChatMessagesProps {
   sections: ChatSection[];
   onQuerySelect: (query: string) => void;
-  status: MockUseChatHelpers['status'];
+  status: 'initial' | 'submitted' | 'streaming' | 'done' | 'error'; // Directly use the string literal types
   chatId?: string;
   addToolResult?: (params: { toolCallId: string; result: any }) => void;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   onUpdateMessage?: (messageId: string, newContent: string) => Promise<void>;
   reload?: (messageId: string) => Promise<void | string | null | undefined>;
+  isLoadingHistory: boolean; // New prop to indicate history loading
 }
 
 export function ChatMessages({
@@ -105,65 +86,21 @@ export function ChatMessages({
   addToolResult,
   scrollContainerRef,
   onUpdateMessage,
-  reload
+  reload,
+  isLoadingHistory // Destructure the new prop
 }: ChatMessagesProps) {
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [animatedMessageIndex, setAnimatedMessageIndex] = useState(0); // Tracks which assistant message is currently animating
-  const [allMessagesRendered, setAllMessagesRendered] = useState(false); // New state to track if all messages are fully rendered
 
-  // Simulate initial 3-second loading buffer
-  useEffect(() => {
-    const initialLoadTimer = setTimeout(() => {
-      setIsInitialLoading(false);
-    }, 3000); // 3-second buffer
-
-    return () => clearTimeout(initialLoadTimer);
-  }, []);
-
-  // Effect to manage sequential animation of assistant messages
-  useEffect(() => {
-    if (isInitialLoading || sections.length === 0) {
-      return; // Don't start animating until initial load is done and there are sections
-    }
-
-    // Flatten all assistant messages from all sections into a single array for sequential animation
-    const allAssistantMessages = sections.flatMap(section =>
-      section.assistantMessages.filter(msg => msg.role === 'assistant')
-    );
-
-    if (animatedMessageIndex < allAssistantMessages.length) {
-      setAllMessagesRendered(false); // More messages to animate
-    } else if (allAssistantMessages.length > 0) {
-      setAllMessagesRendered(true); // All assistant messages have been animated
-    }
-
-  }, [isInitialLoading, sections, animatedMessageIndex]);
-
-
-  // Callback for when an AnimatedMessage finishes its animation
-  const handleAnimationEnd = () => {
-    // Increment the index to trigger the next message's animation
-    setAnimatedMessageIndex(prevIndex => prevIndex + 1);
-  };
-
-  // Scroll to bottom whenever sections change or animation progresses
+  // Auto-scroll to bottom whenever sections change or status changes
   useEffect(() => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
     }
-  }, [sections, animatedMessageIndex, isInitialLoading]);
+  }, [sections, status, scrollContainerRef]);
 
 
-  if (isInitialLoading) {
-    return <InitialLoadingSkeleton />;
+  if (isLoadingHistory) {
+    return <AutoScalingChatSkeleton />;
   }
-
-  // Determine if the streaming skeleton should be shown for the *last* assistant message
-  const showStreamingSkeleton =
-    status === 'streaming' &&
-    sections.length > 0 &&
-    sections[sections.length - 1].assistantMessages.length > 0 &&
-    !allMessagesRendered; // Only show if not all messages are fully rendered yet
 
   return (
     <div
@@ -187,47 +124,33 @@ export function ChatMessages({
               ))}
             </RenderMessage>
 
-            {/* Assistant messages - controlled by animation logic */}
+            {/* Assistant messages */}
             {section.assistantMessages.map((assistantMessage, msgIndex) => {
-              // Flattened index for sequential animation across all sections
-              // This logic needs to correctly identify the current message's position
-              // in the overall sequence of *all* assistant messages.
-              let flatAssistantMessages: UIMessage[] = [];
-              for (let i = 0; i <= sectionIndex; i++) {
-                  flatAssistantMessages = flatAssistantMessages.concat(
-                      sections[i].assistantMessages.filter(msg => msg.role === 'assistant')
-                  );
-              }
-              const currentFlatIndex = flatAssistantMessages.findIndex(msg => msg.id === assistantMessage.id);
-
-
-              // Only render messages up to the current animatedMessageIndex
-              if (currentFlatIndex > animatedMessageIndex) {
-                return null; // Don't render yet
-              }
-
-              // Format the message content before passing to AnimatedMessage
               const formattedContent = formatChatMessageContent(assistantMessage.content[0]?.text || '');
+              const isLastSection = sectionIndex === sections.length - 1;
+              const isLastAssistantMessageInLastSection = isLastSection && msgIndex === section.assistantMessages.length - 1;
+              const isCurrentlyStreaming = status === 'streaming' && isLastAssistantMessageInLastSection;
 
               return (
                 <RenderMessage key={assistantMessage.id} message={assistantMessage}>
-                  {/* If this is the message currently being animated, use AnimatedMessage */}
-                  {currentFlatIndex === animatedMessageIndex && !allMessagesRendered ? (
+                  {/* If it's the last assistant message AND we are actively streaming, use AnimatedMessage */}
+                  {isCurrentlyStreaming ? (
                     <AnimatedMessage
-                      formattedHtmlMessage={formattedContent} // Pass formatted HTML
-                      onAnimationEnd={handleAnimationEnd}
+                      formattedHtmlMessage={formattedContent}
+                      // onAnimationEnd can be removed or be a no-op as sequential animation is gone
+                      onAnimationEnd={() => {}}
                     />
                   ) : (
-                    // Otherwise, render content directly (already animated or system message)
-                    <div dangerouslySetInnerHTML={{ __html: formattedContent }} /> // Render formatted HTML directly
+                    // Otherwise, render content directly (historical or completed messages)
+                    <div dangerouslySetInnerHTML={{ __html: formattedContent }} />
                   )}
                 </RenderMessage>
               );
             })}
 
-            {/* Show streaming skeleton only if the last message is still being streamed */}
-            {showStreamingSkeleton && sectionIndex === sections.length - 1 && (
-              <DefaultSkeleton />
+            {/* Show a basic skeleton for the *last* assistant message while it's still being streamed */}
+            {status === 'streaming' && sectionIndex === sections.length - 1 && sections[sectionIndex].assistantMessages.length === 0 && (
+                <DefaultSkeleton />
             )}
           </div>
         ))}
@@ -235,3 +158,13 @@ export function ChatMessages({
     </div>
   );
 }
+
+// The DefaultSkeleton remains the same for live streaming indication
+const DefaultSkeleton = () => (
+  <div className="flex justify-start mb-4">
+    <div className="bg-gray-100 text-gray-800 self-start rounded-xl p-3 max-w-[80%] animate-pulse border border-gray-200 shadow-sm">
+      <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+      <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+    </div>
+  </div>
+);

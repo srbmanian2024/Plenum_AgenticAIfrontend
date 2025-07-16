@@ -1,21 +1,27 @@
 'use client'
 
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { v4 as uuidv4 } from 'uuid'
+
 import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
+  CardTitle
 } from '@/components/ui/card'
 import { IconLogo } from '@/components/ui/icons'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { apiCall } from '@/lib/api'
 import { cn } from '@/lib/utils/index'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+
+// Helper function to generate a UUID
+function generateUUID(): string {
+  return uuidv4()
+}
 
 export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRef<'div'>) {
   const [username, setUsername] = useState('')
@@ -24,25 +30,108 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
 
+  const AZURE_LOGIN_API_URL =
+    'https://agent-api.gentlesmoke-fd81e91e.uaenorth.azurecontainerapps.io/v1/auth/login'
+  const PROFILE_API_URL =
+    'https://agent-api.gentlesmoke-fd81e91e.uaenorth.azurecontainerapps.io/v1/auth/me'
+  const START_SESSION_API_URL =
+    'https://agent-api.gentlesmoke-fd81e91e.uaenorth.azurecontainerapps.io/v1/sessions'
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
 
     try {
-      const res = await apiCall('/api/proxy/login', 'POST', {
-        username,
-        password,
+      // 1. Call login API
+      const response = await fetch(AZURE_LOGIN_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json'
+        },
+        body: JSON.stringify({ username, password })
       })
 
-      if (res.access_token && res.token_type === 'bearer') {
-        localStorage.setItem('access_token', res.access_token)
-        router.push('/') // Or wherever you want to redirect
+      const data = await response.json()
+
+      if (response.ok && data.access_token && data.token_type === 'bearer') {
+        const accessToken = data.access_token
+        localStorage.setItem('access_token', accessToken)
+        console.log('✅ Access Token stored:', accessToken)
+
+        // 2. Generate and store session ID
+        const sessionId = generateUUID()
+        localStorage.setItem('session_id', sessionId)
+        console.log(`✅ Session UUID generated and saved: ${sessionId}`)
+
+        // 3. Fetch user profile
+        const profileRes = await fetch(PROFILE_API_URL, {
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`
+          }
+        })
+
+        if (!profileRes.ok) {
+          console.error('❌ Failed to fetch user profile:', profileRes.statusText)
+          setError('Failed to fetch user profile.')
+          setIsLoading(false)
+          return
+        }
+
+        const profileData = await profileRes.json()
+        const userId = profileData?.id
+
+        if (!userId) {
+          console.error('❌ User ID not found in profile data.')
+          setError('User ID not found.')
+          setIsLoading(false)
+          return
+        }
+
+        localStorage.setItem('user_id', userId)
+        console.log('✅ User ID saved:', userId)
+
+        // 4. Start session API
+        const sessionRes = await fetch(START_SESSION_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            session_id: sessionId
+          })
+        })
+
+        if (!sessionRes.ok) {
+          const errRes = await sessionRes.json()
+          console.error('❌ Failed to start session:', errRes)
+          setError('Failed to start session.')
+          setIsLoading(false)
+          return
+        }
+
+        console.log('✅ Session started successfully.')
+
+        // 5. Redirect to homepage
+        router.push('/')
       } else {
-        setError('Login failed: No access token returned')
+        const errMsg =
+          data?.detail?.[0]?.msg ||
+          'Login failed: Invalid credentials or unexpected response.'
+        setError(errMsg)
+        console.error('❌ Login API error:', data)
       }
-    } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : 'An error occurred during login')
+    } catch (err: any) {
+      console.error('❌ Login fetch error:', err)
+      setError(
+        err.message ||
+          'An unexpected error occurred during login. Please check your network connection.'
+      )
     } finally {
       setIsLoading(false)
     }
@@ -53,7 +142,7 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl flex flex-col items-center justify-center gap-4">
-            <IconLogo className="size-12" />
+            <IconLogo className="h-40 w-40" />
             Welcome back
           </CardTitle>
           <CardDescription>Sign in to your account</CardDescription>

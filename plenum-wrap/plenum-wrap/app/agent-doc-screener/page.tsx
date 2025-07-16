@@ -1,196 +1,223 @@
 'use client'
 
-import { useEffect, useRef, useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button' // Assuming Shadcn UI Button
-import { Input } from '@/components/ui/input'   // Assuming Shadcn UI Input
+import { Input } from '@/components/ui/input' // Assuming Shadcn UI Input
 import {
-  MessageCircle, // Icon for GPT model
-  Search,        // Icon for Search button
-  Paperclip,     // Icon for attachment
-  ArrowUp,       // Icon for Send button
-  MoreHorizontal // Icon for the top center "..."
+  ArrowUp,
+  MessageCircle, // Icon for Send button
+  MoreHorizontal, // Icon for the top center "..." // Icon for Search button
+  Paperclip, // Icon for GPT model
+  Search
 } from 'lucide-react' // Lucide React for icons
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { ChatMessages } from './chat/chat-messages'; // Import the updated ChatMessages component
+import { ChatMessages } from './chat/chat-messages' // Import the updated ChatMessages component
 
 // --- MOCK INTERFACES AND COMPONENTS (TO SIMULATE @ai-sdk/react DEPENDENCIES) ---
 // Simplified UIMessage interface for text content
 interface UIMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'tool' | 'system'; // Added 'system' for initial messages
-  content: Array<{ type: 'text'; text: string; }>;
-  createdAt?: Date; // Added for potential sorting/timestamping
+  id: string
+  role: 'user' | 'assistant' | 'tool' | 'system' // Added 'system' for initial messages
+  content: Array<{ type: 'text'; text: string }>
+  createdAt?: Date // Added for potential sorting/timestamping
 }
 
 // Simplified ChatSection interface
 interface ChatSection {
-  id: string;
-  userMessage: UIMessage;
-  assistantMessages: UIMessage[];
+  id: string
+  userMessage: UIMessage
+  assistantMessages: UIMessage[]
 }
 
 // Mock UseChatHelpers status (only relevant parts for this example)
 interface MockUseChatHelpers {
-  status: 'initial' | 'submitted' | 'streaming' | 'done' | 'error';
+  status: 'initial' | 'submitted' | 'streaming' | 'done' | 'error'
 }
 
 // --- END MOCK INTERFACES AND COMPONENTS ---
 
-
 // Main AgentChat Component
 export default function AgentChat() {
   // State to manage chat sections (user message + assistant responses for a turn)
-  const [sections, setSections] = useState<ChatSection[]>([]);
+  const [sections, setSections] = useState<ChatSection[]>([])
   // State for the current input message
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState('')
   // Ref for the scroll container to enable scrolling to the bottom
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   // Ref for the WebSocket connection
-  const socketRef = useRef<WebSocket | null>(null);
+  const socketRef = useRef<WebSocket | null>(null)
   // State for the chat status (mimicking UseChatHelpers['status'])
-  const [chatStatus, setChatStatus] = useState<MockUseChatHelpers['status']>('initial');
+  const [chatStatus, setChatStatus] =
+    useState<MockUseChatHelpers['status']>('initial')
 
   // Refs to track the current section and message being streamed
-  const currentStreamingSectionIdRef = useRef<string | null>(null);
-  const currentStreamingMessageIdRef = useRef<string | null>(null);
+  const currentStreamingSectionIdRef = useRef<string | null>(null)
+  const currentStreamingMessageIdRef = useRef<string | null>(null)
 
   // Helper to generate unique IDs
-  const generateId = () => Math.random().toString(36).substring(2, 11);
+  const generateId = () => Math.random().toString(36).substring(2, 11)
 
   // useEffect for WebSocket connection setup and teardown
   useEffect(() => {
-    setChatStatus('initial');
-    const socket = new WebSocket('wss://doc-screener-rag.livelywave-29b8c618.uaenorth.azurecontainerapps.io/v1/websocket/ws/chat');
-    socketRef.current = socket;
+    setChatStatus('initial')
+    const socket = new WebSocket(
+      'wss://doc-screener-rag.livelywave-29b8c618.uaenorth.azurecontainerapps.io/v1/websocket/ws/chat'
+    )
+    socketRef.current = socket
 
     socket.onopen = () => {
-      console.log('WebSocket Connected.');
+      console.log('WebSocket Connected.')
       // Add a system message to the chat history when connected
-      appendMessageToSections({ role: 'system', text: '✅ Connected to GPT-4o mini assistant.' });
-      setChatStatus('done'); // Set to done after initial system message
-    };
+      // appendMessageToSections({ role: 'system', text: '✅ Connected to GPT-4o mini assistant.' });
+      setChatStatus('done') // Set to done after initial system message
+    }
 
-    socket.onmessage = (event) => {
-      const chunk = event.data;
-      setChatStatus('streaming');
+    socket.onmessage = event => {
+      const chunk = event.data
+      setChatStatus('streaming')
 
       setSections(prevSections => {
-        let updatedSections = [...prevSections];
-        let lastSection = updatedSections[updatedSections.length - 1];
+        let updatedSections = [...prevSections]
+        let lastSection = updatedSections[updatedSections.length - 1]
 
         // Ensure there's an active section to append to (created by user's message)
         // If the last message was a system message, we need to find the *last user-initiated* section
         // or create a new one if no user interaction has happened yet.
-        if (!lastSection || lastSection.userMessage.content[0].text === '' || lastSection.id !== currentStreamingSectionIdRef.current) {
+        if (
+          !lastSection ||
+          lastSection.userMessage.content[0].text === '' ||
+          lastSection.id !== currentStreamingSectionIdRef.current
+        ) {
           // This case should ideally be rare if user always sends first.
           // If a message comes without a preceding user message, create a dummy section.
-          console.warn("No active section for streaming, or section ID mismatch. Creating a new one.");
-          const newSectionId = generateId();
-          const newAssistantMessageId = generateId();
+          console.warn(
+            'No active section for streaming, or section ID mismatch. Creating a new one.'
+          )
+          const newSectionId = generateId()
+          const newAssistantMessageId = generateId()
           updatedSections.push({
             id: newSectionId,
-            userMessage: { id: generateId(), role: 'user', content: [{ type: 'text', text: '...' }] }, // Placeholder user message
-            assistantMessages: [{ id: newAssistantMessageId, role: 'assistant', content: [{ type: 'text', text: chunk }], createdAt: new Date() }]
-          });
-          currentStreamingSectionIdRef.current = newSectionId;
-          currentStreamingMessageIdRef.current = newAssistantMessageId;
-          return updatedSections;
+            userMessage: {
+              id: generateId(),
+              role: 'user',
+              content: [{ type: 'text', text: '...' }]
+            }, // Placeholder user message
+            assistantMessages: [
+              {
+                id: newAssistantMessageId,
+                role: 'assistant',
+                content: [{ type: 'text', text: chunk }],
+                createdAt: new Date()
+              }
+            ]
+          })
+          currentStreamingSectionIdRef.current = newSectionId
+          currentStreamingMessageIdRef.current = newAssistantMessageId
+          return updatedSections
         }
 
         // If this is the very first chunk for an assistant message in this section
         if (currentStreamingMessageIdRef.current === null) {
-          const newAssistantMessageId = generateId();
+          const newAssistantMessageId = generateId()
           lastSection.assistantMessages.push({
             id: newAssistantMessageId,
             role: 'assistant',
             content: [{ type: 'text', text: chunk }],
             createdAt: new Date()
-          });
-          currentStreamingMessageIdRef.current = newAssistantMessageId;
+          })
+          currentStreamingMessageIdRef.current = newAssistantMessageId
         } else {
           // Append chunk to the existing streaming assistant message
           const streamingMessage = lastSection.assistantMessages.find(
             msg => msg.id === currentStreamingMessageIdRef.current
-          );
+          )
           if (streamingMessage && streamingMessage.content[0]) {
-            streamingMessage.content[0].text += chunk;
+            streamingMessage.content[0].text += chunk
           }
         }
-        return updatedSections;
-      });
-    };
+        return updatedSections
+      })
+    }
 
     socket.onclose = () => {
-      console.log('WebSocket Disconnected.');
-      appendMessageToSections({ role: 'system', text: '❌ Disconnected from assistant.' });
-      setChatStatus('done');
-      currentStreamingSectionIdRef.current = null;
-      currentStreamingMessageIdRef.current = null;
-    };
+      console.log('WebSocket Disconnected.')
+      // appendMessageToSections({ role: 'system', text: '❌ Disconnected from assistant.' });
+      setChatStatus('done')
+      currentStreamingSectionIdRef.current = null
+      currentStreamingMessageIdRef.current = null
+    }
 
-    socket.onerror = (err) => {
-      console.error('WebSocket error:', err);
-      appendMessageToSections({ role: 'system', text: '⚠️ WebSocket error occurred.' });
-      setChatStatus('error');
-      currentStreamingSectionIdRef.current = null;
-      currentStreamingMessageIdRef.current = null;
-    };
+    socket.onerror = err => {
+      console.error('WebSocket error:', err)
+      // appendMessageToSections({ role: 'system', text: '⚠️ WebSocket error occurred.' });
+      setChatStatus('error')
+      currentStreamingSectionIdRef.current = null
+      currentStreamingMessageIdRef.current = null
+    }
 
     return () => {
-      socket.close();
-    };
-  }, []);
+      socket.close()
+    }
+  }, [])
 
   // Helper to append a generic message (used for system messages)
-  const appendMessageToSections = ({ role, text }: { role: 'user' | 'assistant' | 'system', text: string }) => {
-    setSections(prevSections => {
-      const newId = generateId();
-      if (role === 'system') {
-        return [...prevSections, {
-          id: newId,
-          userMessage: { id: generateId(), role: 'user', content: [{ type: 'text', text: '' }] }, // Dummy user message for system message section
-          assistantMessages: [{ id: newId, role: 'system', content: [{ type: 'text', text: text }], createdAt: new Date() }]
-        }];
-      }
-      return prevSections; // Should not be hit for user/assistant messages handled by handleSend/onmessage
-    });
-  };
+  // const appendMessageToSections = ({ role, text }: { role: 'user' | 'assistant' | 'system', text: string }) => {
+  //   setSections(prevSections => {
+  //     const newId = generateId();
+  //     if (role === 'system') {
+  //       return [...prevSections, {
+  //         id: newId,
+  //         userMessage: { id: generateId(), role: 'user', content: [{ type: 'text', text: '' }] }, // Dummy user message for system message section
+  //         assistantMessages: [{ id: newId, role: 'system', content: [{ type: 'text', text: text }], createdAt: new Date() }]
+  //       }];
+  //     }
+  //     return prevSections; // Should not be hit for user/assistant messages handled by handleSend/onmessage
+  //   });
+  // };
 
   // Handle sending a message
   const handleSend = () => {
     if (input.trim()) {
-      const userMessageId = generateId();
-      const newSectionId = generateId();
+      const userMessageId = generateId()
+      const newSectionId = generateId()
 
       // Create a new section for the user's turn
       setSections(prevSections => [
         ...prevSections,
         {
           id: newSectionId,
-          userMessage: { id: userMessageId, role: 'user', content: [{ type: 'text', text: input.trim() }], createdAt: new Date() },
+          userMessage: {
+            id: userMessageId,
+            role: 'user',
+            content: [{ type: 'text', text: input.trim() }],
+            createdAt: new Date()
+          },
           assistantMessages: [] // Assistant messages will be streamed into this
         }
-      ]);
+      ])
 
       // Set current streaming context
-      currentStreamingSectionIdRef.current = newSectionId;
-      currentStreamingMessageIdRef.current = null; // Reset for new AI message
+      currentStreamingSectionIdRef.current = newSectionId
+      currentStreamingMessageIdRef.current = null // Reset for new AI message
 
       // Send message via WebSocket
-      socketRef.current?.send(input.trim());
-      setChatStatus('submitted'); // Indicate that a message has been sent
+      socketRef.current?.send(input.trim())
+      setChatStatus('submitted') // Indicate that a message has been sent
 
       // Clear the input field
-      setInput('');
+      setInput('')
     }
-  };
+  }
 
   // Determine if the initial greeting ("How can I help you today?") should be shown
   const showInitialGreeting = useMemo(() => {
     // Show greeting if there are no user messages (excluding dummy user messages for system sections)
-    return sections.every(section => section.userMessage.content[0].text === '' || section.userMessage.content[0].text === '...');
-  }, [sections]);
-
+    return sections.every(
+      section =>
+        section.userMessage.content[0].text === '' ||
+        section.userMessage.content[0].text === '...'
+    )
+  }, [sections])
 
   return (
     // Main container for the entire page, with background gradient and centering
@@ -205,7 +232,9 @@ export default function AgentChat() {
       {showInitialGreeting ? (
         // Initial greeting centered in the available space
         <div className="flex flex-col items-center justify-center flex-1 w-full">
-          <h1 className="text-3xl font-semibold text-gray-800 mb-8">How can I help you today?</h1>
+          <h1 className="text-3xl font-semibold text-gray-800 mb-8">
+            How can I help you today?
+          </h1>
         </div>
       ) : (
         // Render ChatMessages when there's actual chat history
@@ -222,7 +251,10 @@ export default function AgentChat() {
       {/* Input Box Area - styled to match the image, fixed at bottom */}
       <div className="w-full max-w-2xl bg-white border border-gray-200 rounded-xl shadow-lg flex items-center p-2 gap-2 mb-4 relative z-10">
         {/* GPT Model Selector (Mimicking the image) */}
-        <Button variant="ghost" className="flex items-center gap-1 text-gray-700 px-3 py-2 rounded-lg hover:bg-orange-500 hover:text-white transition-colors duration-200">
+        <Button
+          variant="ghost"
+          className="flex items-center gap-1 text-gray-700 px-3 py-2 rounded-lg hover:bg-orange-500 hover:text-white transition-colors duration-200"
+        >
           <MessageCircle className="w-4 h-4" />
           <span className="text-sm">Agent Doc Summarizer</span>
         </Button>
@@ -232,21 +264,31 @@ export default function AgentChat() {
           id="message"
           type="text"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSend()}
           placeholder="Ask a question..."
           className="flex-1 border-none focus-visible:ring-0 focus-visible:ring-offset-0 text-gray-800 placeholder-gray-500 text-base"
         />
 
         {/* Action Buttons */}
-        <Button variant="ghost" className="p-2 rounded-lg hover:bg-orange-500 hover:text-white transition-colors duration-200">
+        <Button
+          variant="ghost"
+          className="p-2 rounded-lg hover:bg-orange-500 hover:text-white transition-colors duration-200"
+        >
           <Search className="w-4 h-4" />
-          <span className="ml-1 text-sm hidden sm:inline">Search</span> {/* Hide text on small screens */}
+          <span className="ml-1 text-sm hidden sm:inline">Search</span>{' '}
+          {/* Hide text on small screens */}
         </Button>
-        <Button variant="ghost" className="p-2 rounded-lg hover:bg-orange-500 hover:text-white transition-colors duration-200">
+        <Button
+          variant="ghost"
+          className="p-2 rounded-lg hover:bg-orange-500 hover:text-white transition-colors duration-200"
+        >
           <Paperclip className="w-4 h-4" />
         </Button>
-        <Button onClick={handleSend} className="p-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white transition-colors duration-200">
+        <Button
+          onClick={handleSend}
+          className="p-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white transition-colors duration-200"
+        >
           <ArrowUp className="w-4 h-4" />
         </Button>
       </div>

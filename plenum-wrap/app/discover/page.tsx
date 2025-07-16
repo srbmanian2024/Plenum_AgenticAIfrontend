@@ -19,12 +19,12 @@ type Agent = {
   name: string
   description: string
   domain_id: string
-  domain_name: string
-  endpoint: string
+  domain_name: string | null
+  endpoint_url: string
   capabilities: string[]
   supported_languages: string[]
   created_at: string
-  vendor: string
+  vendor_name: string
 }
 
 export default function DiscoverPage() {
@@ -36,16 +36,20 @@ export default function DiscoverPage() {
   const [activeDomain, setActiveDomain] = useState<string>('All')
   const [searchQuery, setSearchQuery] = useState('')
   const router = useRouter()
-  // Fetch all domains
+
+  // Fetch domains
   useEffect(() => {
     async function fetchDomains() {
       try {
-        const res = await fetch('https://agent-api.livelywave-29b8c618.uaenorth.azurecontainerapps.io/v1/domains/', {
-          headers: {
-            Accept: 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
-          },
-        })
+        const res = await fetch(
+          'https://agent-api.gentlesmoke-fd81e91e.uaenorth.azurecontainerapps.io/v1/domains/',
+          {
+            headers: {
+              Accept: 'application/json',
+              Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
+            },
+          }
+        )
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
         setDomains(data)
@@ -59,12 +63,12 @@ export default function DiscoverPage() {
     fetchDomains()
   }, [])
 
-  // Fetch agents (all or filtered by domain)
+  // Fetch agents
   useEffect(() => {
     async function fetchAgents() {
       setLoadingAgents(true)
       try {
-        const url = new URL('https://agent-api.livelywave-29b8c618.uaenorth.azurecontainerapps.io/v1/agents/')
+        const url = new URL('https://agent-api.gentlesmoke-fd81e91e.uaenorth.azurecontainerapps.io/v1/agents/')
         url.searchParams.set('limit', '100')
         url.searchParams.set('skip', '0')
         if (activeDomain !== 'All') {
@@ -96,6 +100,18 @@ export default function DiscoverPage() {
     }
   }, [activeDomain, domains])
 
+  const handleAgentClick = (agent: Agent) => {
+    if (agent.domain_id && agent.id) {
+      console.log('✅ Domain ID:', agent.domain_id)
+      console.log('✅ Agent ID:', agent.id)
+      localStorage.setItem('selected_domain_id', agent.domain_id)
+      localStorage.setItem('selected_agent_id', agent.id)
+      router.push('/agent-doc-screener')
+    } else {
+      console.error('❌ Missing domain_id or agent id')
+    }
+  }
+
   const filteredAgents = agents.filter((agent) => {
     const searchLower = searchQuery.toLowerCase()
     return (
@@ -107,6 +123,7 @@ export default function DiscoverPage() {
 
   return (
     <div className="flex h-full pt-16">
+      {/* Sidebar: Domains */}
       <aside className="w-60 border-r border-gray-200 bg-muted/40 px-4 py-6 h-[calc(100vh-4rem)] sticky top-16 overflow-y-auto">
         <h2 className="text-lg font-semibold mb-4 text-gray-800">Domains</h2>
         {loadingDomains && <p className="text-gray-500">Loading...</p>}
@@ -145,6 +162,7 @@ export default function DiscoverPage() {
         </nav>
       </aside>
 
+      {/* Main: Agent Cards */}
       <main className="flex-1 overflow-y-auto p-6 border-l border-gray-200 md:border-l-0">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4 sm:gap-0">
           <h1 className="text-2xl font-bold text-gray-800">Discover Agents</h1>
@@ -176,17 +194,15 @@ export default function DiscoverPage() {
             {filteredAgents.map((agent) => (
               <Card
                 key={agent.id}
-onClick={() => {
-  router.push('/agent-doc-screener')
-}}
-  className="cursor-pointer border hover:shadow-lg transition-shadow"
->
+                onClick={() => handleAgentClick(agent)}
+                className="cursor-pointer border hover:shadow-lg transition-shadow"
+              >
                 <CardHeader className="flex flex-col items-start space-y-1 pb-2">
                   <CardTitle className="text-lg font-semibold text-gray-900">
                     {agent.name}
                   </CardTitle>
                   <p className="text-xs text-gray-500">
-                    {agent.domain_name || 'Unknown Domain'}
+                    {agent.domain_name}
                   </p>
                 </CardHeader>
                 <CardContent className="text-sm text-gray-600">

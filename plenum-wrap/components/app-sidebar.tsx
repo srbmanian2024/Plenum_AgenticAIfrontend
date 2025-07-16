@@ -34,7 +34,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { Suspense, useState } from 'react'
-import { ChatHistorySection } from './sidebar/chat-history-section'
+import ChatHistorySection from './sidebar/chat-history-section'
 import { ChatHistorySkeleton } from './sidebar/chat-history-skeleton'
 import { IconLogo } from './ui/icons'
 
@@ -46,8 +46,8 @@ export default function AppSidebar() {
     <Sidebar side="left" variant="sidebar" collapsible="offcanvas">
       <SidebarHeader className="flex flex-row justify-between items-center">
         <Link href="/" className="flex items-center gap-2 px-2 py-3">
-          <IconLogo className={cn('size-5')} />
-          <span className="font-semibold text-sm">Plenum</span>
+          <IconLogo className={cn('size-12')} />
+          <span className=" text-xl">Plenum</span>
         </Link>
         <SidebarTrigger />
       </SidebarHeader>
@@ -145,7 +145,7 @@ export default function AppSidebar() {
             <SidebarMenuButton asChild>
               <Link href="/discover" className="flex items-center gap-2">
                 <Compass className="size-4" />
-                <span>Discover</span>
+                <span>Domains</span>
               </Link>
             </SidebarMenuButton>
             <SidebarMenuButton asChild>
