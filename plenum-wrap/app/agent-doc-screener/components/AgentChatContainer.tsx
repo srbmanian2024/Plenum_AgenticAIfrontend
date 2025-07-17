@@ -1,4 +1,4 @@
-// app/agent-doc-screener/components/AgentChatContainer.tsx
+// app/agent-docs-screener/components/AgentChatContainer.tsx
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -6,6 +6,11 @@ import { toast } from 'sonner';
 import { MoreHorizontal } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
+
+// Import PDF libraries
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
+import { Download } from 'lucide-react'; // Import Download icon for the button
 
 // Import shared types
 import { Attachment, UIMessage, ChatSection } from '../types/chat';
@@ -22,7 +27,7 @@ interface AgentChatContainerProps {
 export function AgentChatContainer({ initialSessionId }: AgentChatContainerProps) {
   const router = useRouter();
   const [input, setInput] = useState('');
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null); // This is the ref for your scrollable chat area
 
   const [selectedFilesForUpload, setSelectedFilesForUpload] = useState<File[]>([]);
   const [previewAttachments, setPreviewAttachments] = useState<Attachment[]>([]);
@@ -35,18 +40,15 @@ export function AgentChatContainer({ initialSessionId }: AgentChatContainerProps
     let sessionIdToUse: string;
 
     if (initialSessionId) {
-      // If an initialSessionId is provided (from history URL)
       sessionIdToUse = initialSessionId;
-      localStorage.setItem('session_id', initialSessionId); // Ensure localStorage reflects current session
+      localStorage.setItem('session_id', initialSessionId);
     } else {
-      // If no initialSessionId, it's a new chat, generate a new UUID
       sessionIdToUse = uuidv4();
       localStorage.setItem('session_id', sessionIdToUse);
-      setSections([]); // Ensure sections are empty for a new chat
+      setSections([]);
     }
     setCurrentSessionId(sessionIdToUse);
 
-    // Persist this session ID in the global list of known sessions for the current user
     const userId = localStorage.getItem('user_id');
     if (userId) {
       try {
@@ -54,7 +56,6 @@ export function AgentChatContainer({ initialSessionId }: AgentChatContainerProps
         const storedSessionsJson = localStorage.getItem(key);
         let storedSessions: string[] = storedSessionsJson ? JSON.parse(storedSessionsJson) : [];
 
-        // Add the new session ID if it's not already in the list
         if (!storedSessions.includes(sessionIdToUse)) {
           storedSessions.push(sessionIdToUse);
           localStorage.setItem(key, JSON.stringify(storedSessions));
@@ -66,11 +67,10 @@ export function AgentChatContainer({ initialSessionId }: AgentChatContainerProps
         console.warn('Cannot persist session ID: user_id not found in localStorage.');
     }
 
-  }, [initialSessionId]); // Depend on initialSessionId to re-run when changing from new to historical chat
+  }, [initialSessionId]);
 
 
   const logChatMessage = useCallback(async (message: UIMessage) => {
-    // currentSessionId is now guaranteed to be a UUID if set
     const sessionIdToLog = currentSessionId;
     const userId = localStorage.getItem('user_id');
     const agentId = localStorage.getItem('selected_agent_id');
@@ -113,15 +113,9 @@ export function AgentChatContainer({ initialSessionId }: AgentChatContainerProps
       const result = await response.json();
       console.log(`✅ Chat message logged: ${message.role} - "${message.content[0].text.substring(0, 50)}..."`, result);
 
-      // Trigger sidebar update ONLY if it's a user message and a new session's first message
-      // or if an existing session's first message gets updated (less common, but possible if initial message was empty)
       if (message.role === 'user' && message.content[0].text.trim() !== '') {
-          // You might need more sophisticated logic here if your backend API for history
-          // only logs the first user message when the *first* message is logged.
-          // For now, we'll assume dispatching this on every user message is fine for re-fetching.
           window.dispatchEvent(new CustomEvent('chatSessionUpdated', { detail: { sessionId: sessionIdToLog, firstUserMessage: message.content[0].text } }));
       }
-
 
     } catch (error) {
       console.error('❌ Failed to log chat message:', error);
@@ -144,7 +138,6 @@ export function AgentChatContainer({ initialSessionId }: AgentChatContainerProps
     sessionId: currentSessionId,
   });
 
-  // Fetch past chat history on load IF an initialSessionId is provided
   useEffect(() => {
     if (currentSessionId && initialSessionId === currentSessionId) {
       setIsLoadingHistory(true);
@@ -222,17 +215,15 @@ export function AgentChatContainer({ initialSessionId }: AgentChatContainerProps
     if (files.length === 0 || !currentSessionId) return;
 
     for (const file of files) {
-      // 1. Show a loading toast for the current file being uploaded
       const uploadToastId = toast.loading(`Uploading "${file.name}"...`, {
-        duration: Infinity, // Keep open until manually updated
-        id: `upload-${file.name}-${Date.now()}` // Unique ID for updating this specific toast
+        duration: Infinity,
+        id: `upload-${file.name}-${Date.now()}`
       });
 
       const formData = new FormData();
       formData.append('file', file);
 
       try {
-        // Add a user message to the chat indicating upload started (optional, but good for chat history)
         const uploadUserMessage: UIMessage = {
           id: generateId(),
           role: 'user',
@@ -261,25 +252,20 @@ export function AgentChatContainer({ initialSessionId }: AgentChatContainerProps
         const result = await response.json();
         console.log(`File "${file.name}" upload success:`, result);
 
-        // 2. Update the toast to a success message
         toast.success(`"${file.name}" uploaded successfully!`, { id: uploadToastId, duration: 3000 });
 
-        // Send a message via WebSocket about the processed document (this goes to the agent)
         if (socketRef.current?.readyState === WebSocket.OPEN) {
           // socketRef.current?.send(`Document "${file.name}" uploaded and processed for session ${currentSessionId}. Please summarize or answer questions based on it.`);
         } else {
-            // Fallback warning if WebSocket isn't ready
             toast.warning('WebSocket not connected. Document uploaded, but communication with agent might be delayed.', { duration: 5000 });
             console.error('WebSocket is not open, cannot send file message to agent.');
         }
 
       } catch (error) {
         console.error(`Error uploading file "${file.name}":`, error);
-        // 3. Update the toast to an error message
         toast.error(`Failed to upload "${file.name}".`, { id: uploadToastId, description: error instanceof Error ? error.message : String(error), duration: 5000 });
       }
     }
-    // Clear selected files and previews after all attempts
     setSelectedFilesForUpload([]);
     setPreviewAttachments([]);
   }, [currentSessionId, setSections, generateId, logChatMessage, socketRef]);
@@ -358,9 +344,84 @@ export function AgentChatContainer({ initialSessionId }: AgentChatContainerProps
 
   const isSendButtonDisabled = input.trim() === '' && selectedFilesForUpload.length === 0;
 
+
+  // New function to handle PDF export
+  const handleExportPdf = useCallback(async () => {
+    if (!scrollContainerRef.current) {
+      toast.error("Chat content not found for export.");
+      return;
+    }
+
+    const exportToastId = toast.loading("Generating PDF...", { duration: Infinity });
+
+    // Declare variables to store original styles and scroll position
+    let originalOverflow = '';
+    let originalScrollTop = 0;
+
+    try {
+      // Temporarily remove overflow-y to capture full content without scrollbars
+      // Make sure to restore it in finally block
+      originalOverflow = scrollContainerRef.current.style.overflowY;
+      scrollContainerRef.current.style.overflowY = 'visible';
+      // Adjust scroll position to top if needed to ensure all content is rendered correctly by html2canvas
+      originalScrollTop = scrollContainerRef.current.scrollTop;
+      scrollContainerRef.current.scrollTop = 0;
+
+
+      const canvas = await html2canvas(scrollContainerRef.current, {
+        scale: 2, // Increase scale for better quality (e.g., 2 for retina screens)
+        useCORS: true, // Important if you have images from other domains
+        // windowWidth: document.documentElement.offsetWidth, // Can help with scaling
+        // windowHeight: document.documentElement.offsetHeight,
+        logging: false, // Set to true for debugging html2canvas issues
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4'); // 'p' for portrait, 'mm' for millimeters, 'a4' size
+      const imgWidth = 210; // A4 width in mm
+      const pageHeight = 297; // A4 height in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // Handle multiple pages for long chats
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      const fileName = `chat-export-${currentSessionId?.substring(0, 8) || 'new-session'}-${new Date().toISOString().slice(0, 10)}.pdf`;
+      pdf.save(fileName);
+      toast.success("PDF generated successfully!", { id: exportToastId, duration: 3000 });
+
+    } catch (error) {
+      console.error('Failed to export chat to PDF:', error);
+      toast.error('Failed to generate PDF.', { id: exportToastId, description: error instanceof Error ? error.message : String(error), duration: 5000 });
+    } finally {
+        // Restore original styles and scroll position
+        if (scrollContainerRef.current) {
+            scrollContainerRef.current.style.overflowY = originalOverflow;
+            scrollContainerRef.current.scrollTop = originalScrollTop;
+        }
+    }
+  }, [currentSessionId]); // Depend on currentSessionId for filename
+
+
   return (
     <div className="flex flex-col items-center justify-between h-screen bg-gradient-to-b from-white to-pink-50/50 p-4 font-inter">
-      <div className="absolute top-4 right-4 z-10">
+      <div className="absolute top-4 right-4 z-10 flex space-x-2"> {/* Added flex and space-x-2 */}
+        <button
+          onClick={handleExportPdf}
+          className="p-2 rounded-full hover:bg-gray-200 text-gray-500 transition"
+          title="Export chat to PDF"
+        >
+          <Download className="w-6 h-6" />
+        </button>
         <MoreHorizontal className="w-6 h-6 text-gray-500" />
       </div>
 
@@ -375,7 +436,7 @@ export function AgentChatContainer({ initialSessionId }: AgentChatContainerProps
           sections={sections}
           onQuerySelect={() => {}}
           status={chatStatus}
-          scrollContainerRef={scrollContainerRef}
+          scrollContainerRef={scrollContainerRef} // Pass the ref to ChatMessages
           isLoadingHistory={isLoadingHistory}
         />
       )}

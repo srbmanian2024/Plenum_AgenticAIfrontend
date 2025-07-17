@@ -1,6 +1,7 @@
+// app/discover/page.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react' // Import useCallback
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -13,6 +14,11 @@ import { Search, UserPlus, Globe } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Domain } from '@/lib/types/domain'
 import { useRouter } from 'next/navigation'
+import {
+  Dialog,
+  DialogTrigger,
+} from '@/components/ui/dialog'; // Import Dialog components
+import { CreateAgentForm } from '@/components/create-agent-form'; // Import the new form component
 
 type Agent = {
   id: string
@@ -35,9 +41,10 @@ export default function DiscoverPage() {
   const [error, setError] = useState<string | null>(null)
   const [activeDomain, setActiveDomain] = useState<string>('All')
   const [searchQuery, setSearchQuery] = useState('')
+  const [isFormOpen, setIsFormOpen] = useState(false); // State to control dialog open/close
   const router = useRouter()
 
-  // Fetch domains
+  // Fetch domains (remains the same)
   useEffect(() => {
     async function fetchDomains() {
       try {
@@ -63,42 +70,43 @@ export default function DiscoverPage() {
     fetchDomains()
   }, [])
 
-  // Fetch agents
-  useEffect(() => {
-    async function fetchAgents() {
-      setLoadingAgents(true)
-      try {
-        const url = new URL('https://agent-api.gentlesmoke-fd81e91e.uaenorth.azurecontainerapps.io/v1/agents/')
-        url.searchParams.set('limit', '100')
-        url.searchParams.set('skip', '0')
-        if (activeDomain !== 'All') {
-          const domainObj = domains.find(d => d.name === activeDomain)
-          if (domainObj) {
-            url.searchParams.set('domain_id', domainObj.id)
-          }
+  // Fetch agents (wrapped in useCallback for re-use)
+  const fetchAgents = useCallback(async () => {
+    setLoadingAgents(true)
+    try {
+      const url = new URL('https://agent-api.gentlesmoke-fd81e91e.uaenorth.azurecontainerapps.io/v1/agents/')
+      url.searchParams.set('limit', '100')
+      url.searchParams.set('skip', '0')
+      if (activeDomain !== 'All') {
+        const domainObj = domains.find(d => d.name === activeDomain)
+        if (domainObj) {
+          url.searchParams.set('domain_id', domainObj.id)
         }
-
-        const res = await fetch(url.toString(), {
-          headers: {
-            Accept: 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
-          },
-        })
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data = await res.json()
-        setAgents(data)
-      } catch (err: any) {
-        setError('Failed to fetch agents')
-        console.error(err)
-      } finally {
-        setLoadingAgents(false)
       }
-    }
 
+      const res = await fetch(url.toString(), {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
+        },
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setAgents(data)
+    } catch (err: any) {
+      setError('Failed to fetch agents')
+      console.error(err)
+    } finally {
+      setLoadingAgents(false)
+    }
+  }, [activeDomain, domains]) // Dependencies for useCallback
+
+  // Effect to call fetchAgents
+  useEffect(() => {
     if (activeDomain === 'All' || domains.length > 0) {
       fetchAgents()
     }
-  }, [activeDomain, domains])
+  }, [activeDomain, domains, fetchAgents]) // Add fetchAgents to dependencies
 
   const handleAgentClick = (agent: Agent) => {
     if (agent.domain_id && agent.id) {
@@ -120,6 +128,11 @@ export default function DiscoverPage() {
       agent.domain_name?.toLowerCase().includes(searchLower)
     )
   })
+
+  // Callback for when an agent is successfully created
+  const handleAgentCreated = () => {
+    fetchAgents(); // Re-fetch the list of agents
+  };
 
   return (
     <div className="flex h-full pt-16">
@@ -177,13 +190,24 @@ export default function DiscoverPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <Button
-              variant="outline"
-              className="border-gray-300 text-black hover:bg-[#eb5931]"
-            >
-              <UserPlus className="w-4 h-4 mr-2" />
-              Create Agent
-            </Button>
+            {/* Dialog Trigger for Create Agent Form */}
+            <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="border-gray-300 text-black hover:bg-[#eb5931]"
+                >
+                  <UserPlus className="w-4 h-4 mr-2" />
+                  Create Agent
+                </Button>
+              </DialogTrigger>
+              {/* The CreateAgentForm component */}
+              <CreateAgentForm
+                domains={domains}
+                onAgentCreated={handleAgentCreated}
+                onClose={() => setIsFormOpen(false)}
+              />
+            </Dialog>
           </div>
         </div>
 
