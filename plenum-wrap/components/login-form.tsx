@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { v4 as uuidv4 } from 'uuid'
@@ -37,10 +37,36 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
   const START_SESSION_API_URL =
     'https://agent-api.gentlesmoke-fd81e91e.uaenorth.azurecontainerapps.io/v1/sessions'
 
+  useEffect(() => {
+    // Check for existing session on component mount
+    const accessToken = localStorage.getItem('access_token');
+    const sessionId = localStorage.getItem('session_id');
+
+    if (accessToken && sessionId) {
+      // If a session already exists locally, redirect to home page
+      console.log('User already logged in based on local storage. Redirecting...');
+      router.push('/');
+    }
+  }, [router]);
+
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
+
+    // Pre-flight check for active session before attempting login
+    const existingAccessToken = localStorage.getItem('access_token');
+    const existingSessionId = localStorage.getItem('session_id');
+
+    if (existingAccessToken && existingSessionId) {
+      setError('You are already logged in. Please sign out first to log in as a different user.');
+      setIsLoading(false);
+      console.warn('Attempted login while already authenticated. Redirecting to home.');
+      router.push('/'); // Redirect to homepage if already logged in
+      router.refresh(); // <--- ADDED: Refresh the page after redirect if already logged in
+      return;
+    }
 
     try {
       // 1. Call login API
@@ -75,7 +101,11 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
 
         if (!profileRes.ok) {
           console.error('❌ Failed to fetch user profile:', profileRes.statusText)
-          setError('Failed to fetch user profile.')
+          setError('Failed to fetch user profile. Please try again.')
+          // On profile fetch failure, clear any partial login data
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('session_id');
+          localStorage.removeItem('user_id');
           setIsLoading(false)
           return
         }
@@ -85,7 +115,11 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
 
         if (!userId) {
           console.error('❌ User ID not found in profile data.')
-          setError('User ID not found.')
+          setError('User ID not found in profile. Please try again.')
+          // On missing user ID, clear any partial login data
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('session_id');
+          localStorage.removeItem('user_id');
           setIsLoading(false)
           return
         }
@@ -110,7 +144,22 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
         if (!sessionRes.ok) {
           const errRes = await sessionRes.json()
           console.error('❌ Failed to start session:', errRes)
-          setError('Failed to start session.')
+
+          // --- MODIFIED HANDLING FOR 500 WITH 409 DETAIL ---
+          if (
+            sessionRes.status === 500 &&
+            errRes?.detail &&
+            typeof errRes.detail === 'string' && // Ensure detail is a string to use .includes()
+            errRes.detail.includes('Active session already exists')
+          ) {
+            setError('An active session already exists for this user. Redirecting to home.');
+            console.warn('Backend returned 500 with "Active session already exists" detail. Proceeding to redirect.');
+            router.push('/'); // If backend says session exists, consider it a success and redirect
+            router.refresh(); // <--- ADDED: Refresh the page after redirect
+          } else {
+            setError('Failed to start session. Please try again.');
+          }
+          // --- END MODIFIED HANDLING ---
           setIsLoading(false)
           return
         }
@@ -119,6 +168,7 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
 
         // 5. Redirect to homepage
         router.push('/')
+        router.refresh(); // <--- ADDED: Refresh the page after successful login and redirect
       } else {
         const errMsg =
           data?.detail?.[0]?.msg ||
@@ -142,7 +192,7 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl flex flex-col items-center justify-center gap-4">
-            <IconLogo className="h-40 w-40" />
+            <IconLogo className="h-16 w-16" />
             Welcome back
           </CardTitle>
           <CardDescription>Sign in to your account</CardDescription>

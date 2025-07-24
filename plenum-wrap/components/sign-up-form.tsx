@@ -25,6 +25,10 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
 
+  // Corrected API URL based on your login and session APIs
+  const REGISTER_API_URL =
+    'https://agent-api.gentlesmoke-fd81e91e.uaenorth.azurecontainerapps.io/v1/auth/register'
+
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
@@ -38,7 +42,7 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
 
     try {
       const res = await fetch(
-        'https://doc-screener-rag.gentlesmoke-fd81e91e.uaenorth.azurecontainerapps.io/v1/auth/register',
+        REGISTER_API_URL, // Use the corrected API URL
         {
           method: 'POST',
           headers: {
@@ -47,9 +51,9 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
           },
           body: JSON.stringify({
             username,
-            emailaddress: email,
+            emailaddress: email, // Ensure this matches your API's expected field name
             password,
-            role: 'user',
+            role: 'user', // Assuming 'user' is the default role for sign-up
           }),
         }
       )
@@ -57,12 +61,25 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
       const data = await res.json()
 
       if (!res.ok) {
-        throw new Error(data.detail || 'Registration failed')
+        // Handle specific error messages from the API
+        if (data.detail && Array.isArray(data.detail) && data.detail.length > 0) {
+          // If 'detail' is an array of validation errors
+          const errorMessages = data.detail.map((err: any) => err.msg).join(', ');
+          throw new Error(errorMessages);
+        } else if (data.detail && typeof data.detail === 'string') {
+          // If 'detail' is a single string error message
+          throw new Error(data.detail);
+        } else {
+          // Fallback for unexpected error structures
+          throw new Error(`Registration failed with status: ${res.status}`);
+        }
       }
 
+      // If registration is successful, redirect to a success page or login page
       router.push('/auth/sign-up-success')
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : 'An error occurred')
+      console.error('Sign up error:', error); // Log the error for debugging
+      setError(error instanceof Error ? error.message : 'An unexpected error occurred during sign up.')
     } finally {
       setIsLoading(false)
     }

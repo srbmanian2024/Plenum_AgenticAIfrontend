@@ -54,6 +54,7 @@ export default function GuestMenu() {
       setIsAuthenticated(false)
       setIsLoading(false)
       router.push('/auth/login') // Redirect to login page after sign out
+      router.refresh(); // <--- ADDED: Refresh the page after redirect
     };
 
     if (sessionId && accessToken) {

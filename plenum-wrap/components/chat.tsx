@@ -6,7 +6,9 @@ import { UploadedFile } from '@/lib/types'
 import { Model } from '@/lib/types/models'
 import { cn, generateUUID } from '@/lib/utils'
 import { useChat } from '@ai-sdk/react'
-import { FileUIPart, UIMessage, defaultChatStore } from 'ai'
+// THIS IS THE LINE THAT MUST BE CORRECTED:
+// defaultChatStore has been removed, and FileUIPart has been changed to FilePart.
+import { FilePart, UIMessage } from 'ai'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -36,24 +38,6 @@ export function Chat({
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
 
-  const chatStore: any = defaultChatStore({
-    api: '/api/chat',
-    messageMetadataSchema: z.object({
-      createdAt: z.date()
-    }),
-    chats: {
-      [id]: {
-        messages: savedMessages
-      }
-    },
-    prepareRequestBody: (body: any) => {
-      return {
-        chatId: body.chatId,
-        message: body.messages.at(-1)
-      }
-    }
-  })
-
   const {
     messages,
     input,
@@ -65,19 +49,26 @@ export function Chat({
     append,
     addToolResult,
     reload
-  } = useChat({
-    chatId: id,
-    onFinish: () => {
-      window.history.replaceState({}, '', `/search/${id}`)
-      window.dispatchEvent(new CustomEvent('chat-history-updated'))
-    },
-    onError: error => {
-      toast.error(`Error in chat: ${error.message}`)
-    },
-    experimental_throttle: 100,
-    chatStore,
-    generateId: generateUUID
-  })
+  } = useChat(
+    // This is the crucial correction: useChat takes a single options object.
+    {
+      api: '/api/chat', // The API endpoint is a property within the options object.
+      chatId: id,
+      initialMessages: savedMessages,
+      messageMetadataSchema: z.object({
+        createdAt: z.date()
+      }),
+      onFinish: () => {
+        window.history.replaceState({}, '', `/search/${id}`)
+        window.dispatchEvent(new CustomEvent('chat-history-updated'))
+      },
+      onError: (error: { message: any }) => {
+        toast.error(`Error in chat: ${error.message}`)
+      },
+      experimental_throttle: 100,
+      generateId: generateUUID
+    }
+  )
 
   // Convert messages array to sections array
   const sections = useMemo<ChatSection[]>(() => {
@@ -150,6 +141,7 @@ export function Chat({
     append({
       role: 'user',
       parts: [{ type: 'text', text: query }],
+      content: query, // Added content property
       id: generateUUID()
     })
   }
@@ -192,7 +184,8 @@ export function Chat({
         const newUIMessage: UIMessage = {
           id: generateUUID(),
           role: 'user',
-          parts: [{ type: 'text', text: newContentText }]
+          parts: [{ type: 'text', text: newContentText }],
+          content: newContentText // Added content property
         }
 
         return [...messagesBeforeEdited, newUIMessage]
@@ -262,18 +255,16 @@ export function Chat({
         const newResentUserMessage: UIMessage = {
           id: generateUUID(),
           role: 'user',
-          parts: [{ type: 'text', text: contentToResend }]
+          parts: [{ type: 'text', text: contentToResend }],
+          content: contentToResend // Added content property
         }
         return [...messagesBeforeTarget, newResentUserMessage]
       })
 
-      await deleteTrailingMessages(id, deletionTimestamp)
+      await deleteTrailingMessages(id, pivotTimestamp)
       await reload()
     } catch (error) {
-      console.error(
-        `Error during reload from message preceding ${reloadFromFollowerMessageId}:`,
-        error
-      )
+      console.error('Error during message edit and reload process:', error)
       toast.error(`Failed to reload conversation: ${(error as Error).message}`)
     }
   }
@@ -283,7 +274,7 @@ export function Chat({
 
     const uploaded = uploadedFiles.filter(f => f.status === 'uploaded')
 
-    const files: FileUIPart[] = uploaded.map(f => ({
+    const files: FilePart[] = uploaded.map(f => ({ // Changed FileUIPart to FilePart
       type: 'file',
       url: f.url!,
       name: f.name!,
